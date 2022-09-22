@@ -1,4 +1,4 @@
-# THis is my STA426 github repository 
+# This is my STA426 github repository 
 
 Text tba [link](https://cbb.ethz.ch)
 
