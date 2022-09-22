@@ -1,0 +1,44 @@
+---
+title: "Exercise_1B"
+author: "Sarah Lötscher"
+format: html
+editor: visual
+---
+
+## Week 1 Exercise Part B
+
+
+### 1.Set a seed
+Set a seed Set a seed to make output reproducible.
+
+```{r}
+set.seed(0)
+```
+
+### 2.Sampling
+Sample 100 values from a negative binomial distribution where the mu=10 and the dispersion=2.
+
+```{r}
+sample<-rnbinom(100, size=2, mu=10)
+sample
+```
+### 3.Plotting
+Plot the Histogram of the sampled data on standard scale.
+
+```{r}
+hist(sample)
+```
+
+Plot the histogram of the sampled data on log scale.
+
+```{r}
+hist(log10(sample))
+
+```
+### 4.Mean and Variance of sample
+```{r}
+mean<- mean(sample)
+variance<- var(sample)
+```
+
+The mean of this sample is `r mean` and the variance is `r variance`. 
