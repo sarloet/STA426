@@ -16,12 +16,14 @@ set.seed(0)
 ```
 
 ### 2.Sampling
-Sample 100 values from a negative binomial distribution where the mu=10 and the dispersion=2.
 
+Sample 100 values from a negative binomial distribution where the mu=10 and the dispersion=2.
+size=1/dispersion=0.5
 ```{r}
-sample<-rnbinom(100, size=2, mu=10)
+sample<-rnbinom(100, size=0.5, mu=10)
 sample
 ```
+
 ### 3.Plotting
 Plot the Histogram of the sampled data on standard scale.
 
