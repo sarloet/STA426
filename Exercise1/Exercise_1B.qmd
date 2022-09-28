@@ -34,7 +34,7 @@ hist(sample)
 Plot the histogram of the sampled data on log scale.
 
 ```{r}
-hist(log10(sample))
+hist(log10(sample)+1)
 
 ```
 ### 4.Mean and Variance of sample
