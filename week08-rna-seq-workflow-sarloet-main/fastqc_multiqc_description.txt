@@ -1,0 +1,41 @@
+Description of the FastQC/MultiQC output
+-------------------------------------------------------------------------------------------
+
+99.8% of reads were sucessfully aligned for all the samples in STAR.
+
+Most of the transcripts show a fragment length between 200-300 bp.
+
+The mean quality value across each base position in the read looks good. 
+There was always a phred score higer than 30 for all the samples.
+
+The per Base Sequence Content which is the proportion of each base position for which each 
+of the four normal DNA bases has been called is the only section which all of the samples 
+failed. This means that difference between A and T, or G and C is greater than 20% in any 
+position for all the samples. Howewer this could be biased since our sequences where adapter 
+trimmed which naturally introduces a composition bias at the end of the reads as sequences.
+
+For the per Sequence GC Content which is the average GC content of read we expect 
+a normal random library typically have a roughly normal distribution of GC content 
+with the central peak corresponding to the overall GC content of the underlying genome. 
+However we get warnings for all 6 samples in this category. This means that the sum 
+of the deviations from the normal distribution represents more than 15% of the reads 
+in all the samples. 
+
+Per Base N Content which is the percentage of base calls at each position for which an N was 
+called seems to be very low which is good.
+
+For the Sequence Length Distribution which is the distribution of fragment sizes (read lengths) 
+found throws us warnings for all 6 samples. This means that all sequences are not the same length.
+For some sequencing platforms it is entirely normal to have different read lengths so warnings 
+here can be ignored.
+
+Sequence Duplication Levels showing the relative level of duplication found for every sequence are 
+all in acceptable range.
+
+The 6 samples had less than 1% of reads made up of overrepresented sequences
+
+No samples found with any adapter contamination > 0.1%
+
+
+
+

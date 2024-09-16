@@ -1,0 +1,294 @@
+---
+title: "Exercise4"
+author: "Sarah Lötscher"
+format:
+  html:
+    self-contained: true
+editor: visual
+---
+
+```{r }
+#Load Packages
+library(limma)
+library(ggplot2)
+library(reshape)
+```
+
+```{r }
+#Parameters for simulation
+nGenes <- 10000                   # number of "features"
+nSamples <- 6                     # number of samples (split equal in 2 groups)
+pDiff <- .1                       # percent of genes "differential 
+grp <- rep(0:1,each=nSamples/2)   # dummy variable for exp. group
+trueFC <- 2                       # log-fold-change of truly DE
+
+d0 <- 1
+s0 <- 0.8
+sd <- s0*sqrt(d0/rchisq(nGenes,df=d0))  # dist'n of s.d.
+```
+
+```{r }
+#Create Table
+y <- matrix(rnorm(nGenes*nSamples,sd=sd),nr=nGenes,nc=nSamples)
+
+#Add in “differential expression”
+indD <- 1:floor(pDiff*nGenes)
+diff <- sample(c(-1,1),max(indD),replace=TRUE)*trueFC
+y[indD,grp==1] <- y[indD,grp==1] + diff
+```
+
+## Question 1 
+First, do an exploratory analysis of the true and observed variances. For the observed variances, compute the residual variance for each row of y (i.e., pooled variance of the two simulated samples, not the row-wise variance; see the denominator of the classical two-sample t-statistic) and look at the distribution of them, of the true variances (from the simulated sd) and a scatter plot of true versus observed. Sometimes viewing variances on the log scale is preferred.
+
+```{r }
+#compute the residual variance
+
+var0 = apply(y[,grp==0], 1, var)
+var1 = apply(y[,grp==1], 1, var)
+
+res_var=(var0+var1)/2
+
+#Compute true variance
+true_var=sd^2
+
+
+#Data frame with variances
+variance <- data.frame(true_var, res_var)
+m_variance=melt(variance) #for plotting
+
+head(variance)
+```
+
+```{r }
+#Look at distribution of variances as density plot
+ggplot(m_variance, aes(x=value, color=variable)) + geom_density(size=1)+scale_x_continuous(trans = 'log10')
+
+```
+
+```{r }
+#Scatter plot of true versus observed
+
+ggplot(variance, aes(x = true_var, y = res_var))+geom_point() + scale_y_continuous(trans = 'log10')+scale_x_continuous(trans = 'log10')
+
+```
+
+## Question 2 
+Produce an additional visualization to show that you understand the differential expression that we introduced into the simulation.
+
+```{r }
+
+
+grp0av <- apply(y[, grp==0], 1, mean)
+grp1av <- apply(y[, grp==1], 1, mean)
+m_y <- data.frame(grp0av, grp1av)
+
+m_y=melt(m_y)
+
+ggplot(m_y, aes(x=value, colour=variable)) + geom_density() + xlim(-6,6) + xlab("Sample") + ylab("Response") 
+
+```
+
+```{r }
+(design <- model.matrix(~grp))
+```
+
+## Question 3 
+In terms of the model that is fit for each feature, what is the interpretation of the two columns of this design matrix?
+
+```{r }
+
+(design <- model.matrix(~grp))
+
+```
+
+The two columns describe the model parameters. The intercept column shows the intercepts. The grp column descripes the expression change between the two groups.
+
+```{r }
+fit <- lmFit(y,design)
+fit <- eBayes(fit)
+
+names(fit)
+```
+
+```{r }
+cols <- rep("non-differential",nrow(y))
+cols[indD] <- "differential"
+
+qplot(y=fit$t[,2]) + geom_point(aes(colour=cols)) 
+
+```
+
+## Question 4 
+For each row of y, calculate also the classical 2-sample t-test. See ?t.test for more details about the built-in R function to do this calculation and convince yourself which arguments to use to match the classical t-test described in the lecture. Add a visualization similar to the above plot for the classical t-statistic and the log-fold-change (mean difference of the 2 groups). Which statistic best separates the truly differential from non-differential?
+
+```{r }
+#Calculate the statistics
+moderated_t=fit$t[,2]
+classical_t=fit$coef[,2]/fit$sigma/fit$stdev.unscaled[,2]
+log_fold_change=fit$coef[,2]
+
+#Get the plots
+p1=qplot(y=moderated_t) + geom_point(aes(colour=cols)) + ylim(-10,10)
+p2=qplot(y=classical_t) + geom_point(aes(colour=cols)) + ylim(-10,10)
+p3=qplot(y=log_fold_change) + geom_point(aes(colour=cols)) + ylim(-10,10)
+
+#Put three plots next to each other for comparison
+gridExtra::grid.arrange(p1, p2, p3 )
+
+```
+
+The moderated t-statistic seems to give the best separation between the differential and non-differential samples.
+
+## Question 5 
+Pick a reasonable metric to compare the methods, such as an ROC curve, false discovery plot, power versus achieved FDR. Using this metric/curve, formally compare the performance of the classical t-test, the moderated t-test and the log-fold-change or mean difference (fit\$coef). Two packages that are useful for these kind of plots include: ROCR or iCOBRA.
+
+```{r }
+library(ROCR)
+
+#Make the predictions
+pred_moderated_t <- prediction(abs(moderated_t), !(cols=="non-differential"))
+pred_classical_t <- prediction(abs(classical_t), !(cols=="non-differential"))
+pred_log_fold_change <- prediction(abs(log_fold_change), !(cols=="non-differential"))
+
+#Get the performances of the statistics
+perf_moderated_t <- performance(pred_moderated_t, "tpr", "fpr")
+perf_classical_t <- performance(pred_classical_t, "tpr", "fpr")
+perf_log_fold_change <- performance(pred_log_fold_change, "tpr", "fpr")
+
+```
+
+ROC plot
+
+```{r }
+plot(perf_moderated_t,lwd= 3,main= "ROC curve",col="blue")
+plot(perf_classical_t,lwd= 3,add = TRUE,col="green")
+plot(perf_log_fold_change,lwd= 3,add = TRUE,col="red")
+legend("bottomright",legend = c("moderated t-test", "classical t-test", "log-fold-change"), col = c("blue", "green", "red"), pch = 19, bty = "n")
+```
+
+Precision/Recall plot
+
+```{r }
+#Get the performances of the statistics
+perf_moderated_t <- performance(pred_moderated_t, "prec", "rec")
+perf_classical_t <- performance(pred_classical_t, "prec", "rec")
+perf_log_fold_change <- performance(pred_log_fold_change, "prec", "rec")
+
+#Plot
+plot(perf_moderated_t,lwd= 3,main= "Precision/Recall curve",col="blue")
+plot(perf_classical_t,lwd= 3,add = TRUE,col="green")
+plot(perf_log_fold_change,lwd= 3,add = TRUE,col="red")
+legend("topright",legend = c("moderated t-test", "classical t-test", "log-fold-change"), col = c("blue", "green", "red"), pch = 19, bty = "n")
+
+
+```
+
+Comparing the performance plots the moderated t-test best separates the truly differential from non-differential.
+
+------------------------------------------------------------------------
+
+```{r }
+library("affy")
+library("preprocessCore")
+unzip("affy_estrogen.zip")
+ddir <- "affy_estrogen"
+dir(ddir)
+
+
+```
+
+```{r }
+# preprocess affymetrix data
+targets <- readTargets("targets.txt", path=ddir)
+targets$time.h <- factor(targets$time.h)
+targets
+
+```
+
+```{r }
+abatch <- ReadAffy(filenames=targets$filename,
+                   celfile.path=ddir)
+eset <- rma(abatch)  # bg correct, normalize, summarize
+
+```
+
+```{r }
+mds <- plotMDS( exprs(eset), plot = FALSE)  # MDS plot
+qplot(x=mds$x, mds$y) + 
+  geom_point(aes(shape=targets$estrogen, 
+                 colour=targets$time.h), size=4)
+
+```
+
+```{r }
+# do the limma modeling
+f <- paste(targets$estrogen,targets$time.h,sep="")
+f <- factor(f)
+
+# create design matrix
+design <- model.matrix(~0+f)
+colnames(design) <- levels(f)
+design
+
+```
+
+```{r }
+fit <- lmFit(eset, design)
+
+```
+
+```{r }
+cont.matrix <- makeContrasts(E10="present10-absent10",
+                             E48="present48-absent48",
+                             Time="absent48-absent10",levels=design)
+cont.matrix
+
+```
+
+```{r }
+fit2  <- contrasts.fit(fit, cont.matrix)
+fit2  <- eBayes(fit2)
+class(fit2)
+
+```
+
+```{r }
+names(fit2)
+```
+
+```{r }
+topTable(fit2, coef=1, n=5)
+```
+
+```{r }
+topTable(fit2, coef=2, n=5)
+```
+
+```{r }
+qplot(x=f, y=exprs(eset)["39642_at",],) + 
+  geom_point(aes(shape=targets$estrogen, 
+                 colour=targets$time.h), size=4)
+```
+
+## Question 6 
+From the matrix of summarized Affymetrix data that went into the limma pipeline in the first place (exprs(eset)), manually calculate the logFC and AveExpr for one of the top differentially expressed features.
+
+```{r }
+#Get the top differentially expressed feature --> try to manually calculate these values
+topTable(fit2,coef=2)[1,]
+
+```
+
+```{r }
+#Calculate AveExpr
+topfeauturename<-rownames(topTable(fit2,coef=2)[1,])
+AE<-exprs(eset)[topfeauturename,]
+mean(AE)
+
+```
+
+```{r }
+#Calculate logFC
+mean(AE[f=="present48"])-mean(AE[f=="absent48"])  
+
+```

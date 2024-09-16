@@ -1,0 +1,244 @@
+---
+title: "Exercise 09"
+author: "Sarah Lötscher"
+date: "14 11 2022"
+format:
+  html:
+    self-contained: true
+---
+
+## STA426 Exercise 9: Playing with loess/lowess, adjusting for a batch/technical effect,differential exon usage
+
+```{r,warning = FALSE,message = FALSE}
+#Packages
+library(edgeR)
+library(ggplot2)
+library(vecsets)
+library(pasilla)
+
+```
+
+## Question 1.
+
+Simulate data from the sine curve (from 0 to 2*pi) with Gaussian noise added (as shown in the lecture). Try and “normalize” the sine curve data. That is, subtract the estimate of the lowess/loess curve from the simulated data, such that, if your normalization succeeds, you are left with normally distributed data centred around zero. After this: i) make a plot of the normalized data; ii) make a plot of the difference between the truth (sine curve) and the loess/lowess estimate; iii) create a quantile-quantile (against Gaussian) plot of the normalized data. Comment on your result. Does it look (sufficiently) Gaussian? You may need to play with parameters to get a “good” lowess/loess estimate in the first place.
+
+```{r}
+x <- runif(1000, 0, 2*pi)
+y <- sin(x) + rnorm(1000, sd = .3)
+
+plot(x,y)
+lines(lowess(y~x, f=2/3), col="blue", lwd=3)
+lines(lowess(y~x, f=1/3), col="black", lwd=3)
+lines(lowess(y~x, f=1/10), col="orange", lwd=3)
+```
+
+
+
+```{r}
+#“normalize” the sine curve data
+df_xy<-data.frame(x,y)
+Y_norm <- df_xy[order(df_xy$x),]$y - lowess(x, y, f=1/10)$y
+```
+
+
+i) make a plot of the normalized data
+
+```{r}
+plot(density(Y_norm))
+plot(x,Y_norm)
+```
+
+
+ii) make a plot of the difference between the truth (sine curve) and the loess/lowess estimate
+
+```{r}
+plot(sin,0,2*pi,col="black",lwd=3)
+lines(lowess(x, y, f=1/10),col="orange",lwd=3)
+
+
+```
+
+
+iii) create a quantile-quantile (against Gaussian) plot of the normalized data
+
+```{r}
+qqnorm(Y_norm)
+qqline(Y_norm,col="orange")
+```
+
+Looking at the scatter plot of the normalized data the data seems to now be centered around zero. When we look at the density plot there is a nice looking Gaussian curve confirming that the data is nicely centered around zero now. This is also reflected in the qq-plot where the points align nicely along the diagonal. When “normalizing” the sine curve data i needed to order the y values according to x since the lowess function outputs the data ordered.
+
+
+## Question 2.
+
+Take the data from Exercise 7 and produce an MDS plot again, but this time colour the points according to the covariate in the samples table: libtype (SE = single end, PE = paired end); perhaps also label the points on the MDS plot using the shortname column to make them easy to distinguish. Comment on the relative positions of the samples.
+
+```{r}
+(samples <- read.table("../Exercise7/samples.txt", header=TRUE,
+                      row.names=5, stringsAsFactors=FALSE))
+
+```
+
+```{r}
+#From Exercise 7 with added libtype
+
+counts <- readDGE(samples$countfile,path="../Exercise7/")$counts
+(grp <- gsub("\\-.[0-9]*","",colnames(counts)))
+(lib <- factor(samples$libtype))
+(shortname <-factor(samples$shortname))
+
+group <-factor(grp)
+
+y <- DGEList(counts=counts,group=grp)
+y <- calcNormFactors(y)
+design <- model.matrix(~grp)
+
+y <- estimateDisp(y,design)
+
+```
+
+```{r}
+#MDS plot default
+mds <- plotMDS( y,col = as.numeric(lib), cex=0.8, labels=samples$shortname) 
+
+#Even better labeling including the group
+qplot(x=mds$x, mds$y) + geom_point(aes(colour=lib, shape=group), size=4)+ geom_text(aes(label=shortname),hjust=0,vjust=1.5,nudge_x=-0.1)
+
+```
+
+
+Comment on relative position of the samples in Plot: 
+As we can see in the plot there seems to be some grouping due to the libtype. The paired end reads tend to group to the lower left quadrant while the singe ends are more in the upper right quadrant. So we have to take libtype into account as a cofounder in our model. We have to put the libtype as as covariate.
+
+
+## Question 3.
+
+Put a factor variable for the libtype covariate in the design matrix and redo the edgeR or limma analysis from Exercise 7 (i.e., include also the biological factor of interest, knockout state, in the design matrix). Compare the set of genes called DE from last week’s exercise (i.e., without accounting for the covariate) to this new analysis. Identify and plot (normalized) expression levels of a gene that is affected solely by library type.
+
+```{r}
+#set of genes called DE from last week’s exercise 
+
+#To perform likelihood ratio tests:
+fit <- glmFit(y,design)
+lrt <- glmLRT(fit,coef=2)
+topTags(lrt)
+
+
+#differential genes
+eT <- exactTest(y, pair=c("CG8144_RNAi", "Untreated"))
+dT <- decideTestsDGE(eT, adjust.method="BH", p.value=0.05)
+detags <- rownames(y)[as.logical(dT)] 
+
+```
+
+
+```{r}
+#new design matrix and redo the edgeR or limma analysis
+
+design_new <- model.matrix(~group + samples$libtype)
+
+y_new <- estimateDisp(y,design_new)
+
+#To perform likelihood ratio tests:
+fit_new <- glmFit(y_new,design_new)
+lrt_new <- glmLRT(fit_new,coef=2)
+topTags(lrt_new)
+
+```
+
+
+```{r}
+# Get genes called DE from last weeks exercise
+top_table_edgeR = topTags(lrt,sort.by = "PValue",n=Inf)$table
+DE_edgeR = top_table_edgeR[(which(top_table_edgeR$FDR < 0.05)),]
+
+```
+
+```{r}
+# Get new genes called DE
+top_table_edgeR_new = topTags(lrt_new,sort.by = "PValue",n=Inf)$table
+DE_edgeR_new = top_table_edgeR_new[(which(top_table_edgeR_new$FDR < 0.05)),]
+
+```
+
+
+
+```{r}
+# Get DE genes only affected by library type
+row_names_rm = merge(DE_edgeR,DE_edgeR_new, by=0)$Row.names
+lt_DE = DE_edgeR_new[!(row.names(DE_edgeR_new) %in% row_names_rm), ]
+head(lt_DE)
+
+```
+
+```{r}
+# Get DE genes only affected by library type
+row_names_rm = merge(DE_edgeR,DE_edgeR_new, by=0)$Row.names
+lt_DE = DE_edgeR_new[!(row.names(DE_edgeR_new) %in% row_names_rm), ]
+head(lt_DE)
+
+```
+
+
+```{r}
+# Identify and plot (normalized) expression levels of a gene that is affected solely by library type.
+
+y_norm = data.frame(y$counts)
+
+plot(log(as.numeric(y_norm[row.names(lt_DE[1,]),])), main=paste("log-normalised expression values of gene", row.names(lt_DE[1,])), xlab= "sample id",ylab = 'log expression value',pch = 19,cex=0.8,xaxt = "n")
+axis(1,at=rep(1:length(samples$shortname), 1), labels=as.character(samples$shortname),las=2)
+
+```
+
+
+
+
+## Question 4.
+
+Fix the code to run a standard DEXSeq analysis and plot one of the top differentially spliced genes – for example, see the plotDEXSeq() function.
+
+```{r,warning = FALSE}
+(sdir <- file.path(system.file(package="pasilla"), "extdata"))
+dir(sdir)
+```
+
+```{r}
+
+anno <- file.path(sdir, "Dmel.BDGP5.25.62.DEXSeq.chr.gff")
+annofile = read.csv(file.path(sdir, "pasilla_sample_annotation.csv"))
+
+samplesX = data.frame(cond = rep( c("trt","untrt"), c(3,4) ),
+                      type = c("SE","PE","PE","SE","SE","PE","PE"),
+                      countfile = dir(sdir,pattern="fb.txt"),
+                      stringsAsFactors = TRUE)
+samplesX
+
+
+
+```
+
+```{r,warning = FALSE,message = FALSE}
+#Modify this Code
+library(DEXSeq)
+dxd <- DEXSeqDataSetFromHTSeq(
+           countfiles=file.path( sdir, samplesX$countfile ),
+           sampleData = annofile,
+           design = ~ sample + exon + type:exon + condition:exon,
+           flattenedfile = anno)
+dxd <- estimateSizeFactors( dxd )
+dxd <- estimateDispersions( dxd )
+dxd <- testForDEU( dxd )
+dxr <- DEXSeqResults( dxd )
+
+
+#get top differentially spliced gene
+deg <- perGeneQValue(dxr)
+dsg <- order(perGeneQValue(dxr))[1]
+dsg <- attr(deg[dsg], "names")
+```
+
+
+```{r}
+#plot top differentially spliced gene
+plotDEXSeq(dxr, geneID = dsg , legend=TRUE)
+```

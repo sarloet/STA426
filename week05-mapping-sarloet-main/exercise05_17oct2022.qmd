@@ -1,0 +1,120 @@
+---
+title: "Exercise 05"
+author: "Hubert Rehrauer"
+date: "17 10 2022"
+format:
+  html:
+    self-contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Mapping in practice
+
+Check the online available manuals for the mappers
+
+--------------------------------
+
+## bowtie2
+
+[How do these mappers score alignments?]{.underline}
+
+The score is calculated by subtracting penalties for differences (mismatch, gap, etc.) and, in the local alignment mode, adding bonuses for each match. The scoring system for the end-to-end alignment and local alignment is as follows:
+
+-   Mismatched base at a high-quality position -6
+-   Gap open penalty -5
+-   Gap extension penalty -3
+-   (Only Local alignment) Matches receives a bonus of +2 
+
+[What reporting options are available?]{.underline}
+
+Bowtie2 has three distinct reporting modes:
+
+-Default mode: search for multiple alignments, report the best one. 
+Searches for distinct, valid alignments for each read. When a valid alignment is found, will continue to look for alignments that are nearly as good or better. It stop looking, either because it exceeded a search effort limit or because it already knows all information to report an alignment.
+
+-k mode: search for one or more alignments, report each
+Searches for up to N distinct, valid alignments for each read. All alignments found are reported, in descending order by alignment score. This mode for when the user cares more about whether a read aligns or aligns a certain number of times, than where exactly it originated.
+
+-a mode: search for and report all alignments
+Similar to -k mode but there is no upper limit on the number of alignments Bowtie 2 should report. Alignments found are reported, in descending order by alignment score.
+
+## STAR
+
+[How do these mappers score alignments?]{.underline}
+STAR(Spliced Transcripts Alignment to a Reference)is an aligner for RNA-seq data mapping using a strategy to account for spliced alignments. The algorithm achieves this mapping by performing a two-step process of Seed searching & Clustering, stitching, and scoring.
+Default values: 
+
+- Gap open penalty 0
+- Non-canonical gap open penalty -8
+- GC/AG and CT/GC gap open penalty -4
+- AT/AC and GT/AT gap open penalty  -8
+- Extra score logarithmically scaled to the genomic length of the alignment -0.25
+- Deletion open penalty -2
+- Deletion extension penalty per base -2
+- Insertion open penalty -2
+- Insertion extension penalty per base -2
+- maximum score reduction while searching for SJ boundaries in stitching step +1
+
+
+
+[What reporting options are available?]{.underline}
+
+STAR maps the reads to the genome,and writes several output files such as alignments (SAM/BAM), mapping summary statistics, splice junctions, unmapped reads, signal (wiggle) tracks etc.
+
+
+------------------------------------------------------------------------
+
+## Mapping with R
+
+Use the Rsubread package to map a read file found at http://fgcz-gstore.uzh.ch/public/Yeast_Reads/
+
+```{r, eval=FALSE}
+BiocManager::install("Rsubread", update=FALSE)
+BiocManager::install("BSgenome.Scerevisiae.UCSC.sacCer3", update=FALSE)
+
+# download the a read data file
+dir.create("~/Yeast_example")
+setwd("~/Yeast_example")
+download.file("http://fgcz-gstore.uzh.ch/public/Yeast_Reads/20170313.A-G1_R1-sub.fastq.gz", "G1_R1-sub.fastq.gz")
+
+
+```
+
+```{r, message=FALSE}
+library("BSgenome")
+library("BSgenome.Scerevisiae.UCSC.sacCer3")
+library("Rsubread")
+```
+
+Use the commands *export* to export method in the *BSgenome* package to write the genome as a fasta file on the local disk. Use the commands *buildindex* and *align* of the *Rsubread* package to map the reads. Consult the help pages of the respective functions. Build the index so that at most 2GB of RAM is used. Run the alignment with 4 threads. If you computer has less resources, adapt accordingly.
+
+What is the mapping rate of the reads? How does the mapping rate change if you trim 5 bases of both ends?
+
+```{r}
+export(BSgenome.Scerevisiae.UCSC.sacCer3, con="Scerevisiae.fasta")
+```
+
+```{r}
+buildindex(basename="Scerevisiae_readMAP",reference="Scerevisiae.fasta",memory=2000)
+```
+
+```{r}
+align(index = "Scerevisiae_readMAP", readfile1 ="G1_R1-sub.fastq.gz",type = "rna",input_format = "gzFASTQ", output_file="mapping1.bam", nthreads=4)
+```
+
+```{r}
+align(index = "Scerevisiae_readMAP", readfile1 ="G1_R1-sub.fastq.gz",type = "rna",input_format = "gzFASTQ", output_file="mapping2.bam", nthreads=4,nTrim3 = 5,nTrim5 = 5)
+```
+
+```{r}
+propmapped("mapping1.bam")
+```
+
+```{r}
+propmapped("mapping2.bam")
+```
+
+The mapping rate of the reads is \~ 90.3%. By trimming 5 bases of both ends the mapping rate changes to \~ 91.9%. This means trimming off the ends gives us a better/increased mapping score of about \~ 2%.

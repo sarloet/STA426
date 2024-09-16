@@ -1,0 +1,228 @@
+---
+title: "Exercise 06"
+author: "Hubert Rehrauer"
+date: "24 10 2022"
+format:
+  html:
+    self-contained: true
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Comparison of Expression Estimates
+
+The data set consists for 3 Normal samples and 3 Treated samples with 2.5 Mio reads each. The reads are simulated to come from genes on the human chromosome 1.
+
+The expression values from featureCounts were created with:
+We use the library `Rsubread` to generate the counts
+```{r, eval=FALSE}
+library(Rsubread)
+countResult1 = featureCounts(..., strandSpecific=0,
+                                 GTF.featureType="exon", GTF.attrType="gene_id", useMetaFeatures=TRUE,
+                                 allowMultiOverlap=TRUE, countMultiMappingReads=FALSE)
+save(countResult1, file="countResult1.RData")
+countResult2 = featureCounts(..., strandSpecific=0,
+                                 GTF.featureType="exon", GTF.attrType="gene_id", useMetaFeatures=TRUE,
+                                 allowMultiOverlap=TRUE, countMultiMappingReads=TRUE, fraction=TRUE)
+save(countResult2, file="countResult2.RData")
+```
+
+The RSEM data were generated with
+```{sh, eval=FALSE}
+rsem-calculate-expression .... --calc-pme --calc-ci --strandedness none ...
+```
+For documentation see: http://deweylab.github.io/RSEM/rsem-calculate-expression.html
+
+
+
+## Exercises
+
+
+```{r}
+#Packages
+library(miceadds)
+library(tidyverse)
+```
+
+```{r}
+#Readin data
+
+#featureCounts data
+countResults1 = load.Rdata2("countResult1.RData", path = getwd())
+countResults2 = load.Rdata2("countResult2.RData", path = getwd())
+
+#RSEM genedata
+RSEM_N1_genes <-read.table("RSEM_counts/N1.genes.results", header=TRUE, sep= "\t")
+RSEM_N2_genes <-read.table("RSEM_counts/N2.genes.results", header=TRUE, sep= "\t")
+RSEM_N3_genes <-read.table("RSEM_counts/N3.genes.results", header=TRUE, sep= "\t")
+RSEM_T1_genes <-read.table("RSEM_counts/T1.genes.results", header=TRUE, sep= "\t")
+RSEM_T2_genes <-read.table("RSEM_counts/T2.genes.results", header=TRUE, sep= "\t")
+RSEM_T3_genes <-read.table("RSEM_counts/T3.genes.results", header=TRUE, sep= "\t")
+
+#RSEM isoforms
+RSEM_N1_isoforms <-read.table("RSEM_counts/N1.isoforms.results", header=TRUE, sep= "\t")
+RSEM_N2_isoforms <-read.table("RSEM_counts/N2.isoforms.results", header=TRUE, sep= "\t")
+RSEM_N3_isoforms <-read.table("RSEM_counts/N3.isoforms.results", header=TRUE, sep= "\t")
+RSEM_T1_isoforms <-read.table("RSEM_counts/T1.isoforms.results", header=TRUE, sep= "\t")
+RSEM_T2_isoforms <-read.table("RSEM_counts/T2.isoforms.results", header=TRUE, sep= "\t")
+RSEM_T3_isoforms <-read.table("RSEM_counts/T3.isoforms.results", header=TRUE, sep= "\t")
+
+```
+
+
+## 1. Depending on the featureCount mode, how many alignments are ignored during counting?  
+
+There are the two featureCount modes countResults1 and countResults2 where the difference was whether multi-mapped reads were counted for or not. We need to get the ignored algnements for both of them.
+
+```{r}
+#Get ignored alignements during counting
+ig_al_1 <- sum(countResults1$stat[-1,-1])
+ig_al_2 <- sum(countResults2$stat[-1,-1])
+```
+
+
+```{r}
+#ignored alignements during counting for countResults1
+ig_al_1
+```
+The number of ignored alignements during counting for countResults1 which is not multi-mapped is: 419830
+
+
+```{r}
+#ignored alignements during counting for countResults2
+ig_al_2
+```
+The number of ignored alignements during counting for countResults2 with multipmapping is: 35519
+
+
+## 2. Compare the counts from featureCounts with the genelevel counts from RSEM. Which genes have different values?
+
+```{r}
+#Get feautureCounts
+
+featureCounts1 <- countResults1$counts %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "gene_id") %>%
+  arrange(gene_id)
+
+featureCounts2 <- countResults2$counts %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "gene_id") %>%
+  arrange(gene_id)
+
+head(featureCounts1)
+head(featureCounts2)
+```
+
+```{r}
+#Get Gene counts
+RSEM_gene_counts <- RSEM_N1_genes[,c("gene_id", "expected_count")] %>% 
+  left_join(RSEM_N2_genes[,c("gene_id", "expected_count")], by = "gene_id", suffix = c(".N1", ".N2")) %>% 
+  left_join(RSEM_N3_genes[,c("gene_id", "expected_count")], by = "gene_id") %>% 
+  left_join(RSEM_T1_genes[,c("gene_id", "expected_count")], by = "gene_id", suffix = c(".N3", ".T1")) %>% 
+  left_join(RSEM_T2_genes[,c("gene_id", "expected_count")], by = "gene_id") %>% 
+  left_join(RSEM_T3_genes[,c("gene_id", "expected_count")], by = "gene_id", suffix = c("T2", ".T3")) %>% 
+  arrange(gene_id)
+
+head(RSEM_gene_counts)
+```
+
+```{r}
+# Get genes with different values in the featureCounts and the genelevel for countResults1
+
+Gene_IDs <- RSEM_gene_counts["gene_id"]
+
+#Get difference in expression between
+diff_ex1 = RSEM_gene_counts[, -1] - featureCounts1[, -1]
+
+#Remove the ones without any difference
+indx_rm1 = which(apply(diff_ex1, 1, function(x) all(x == 0)) )
+diff_Gen1 = Gene_IDs[ -indx_rm1, ]
+
+# Top differently expressed genes
+head(diff_Gen1)
+
+#Number of differently expressed genes
+len_diff1<-length(diff_Gen1)
+len_diff1
+```
+
+Comparing the RSEM gene counts and the featureCounts alignments for countResults1, there are 2582 genes with different values in at least one sample.
+
+```{r}
+# Get genes with different values in the featureCounts and the genelevel for countResults2
+
+#Get difference in expression between
+diff_ex2 = RSEM_gene_counts[, -1] - featureCounts2[, -1]
+
+#Remove the ones without any difference
+indx_rm2 = which(apply(diff_ex2, 1, function(x) all(x == 0)) )
+diff_Gen2 = Gene_IDs[ -indx_rm2, ]
+
+# Top differentaily expressed genes
+head(diff_Gen2)
+
+#Number of differently expressed genes
+len_diff2<-length(diff_Gen2)
+len_diff2
+
+```
+
+Comparing the RSEM gene counts and the featureCounts alignments for countResults2, there are 2838 genes with different values in at least one sample.
+
+## 3. How does the sum of the counts in RSEM compare to the number of the aligned reads?  
+
+```{r}
+#Get counts in RSEM
+RSEM_isoform_counts <- RSEM_N1_isoforms[,c("transcript_id", "expected_count")] %>%
+  left_join(RSEM_N2_isoforms[,c("transcript_id", "expected_count")], by = "transcript_id", suffix = c(".N1", ".N2"))%>%
+  left_join(RSEM_N3_isoforms[,c("transcript_id", "expected_count")], by = "transcript_id") %>%
+  left_join(RSEM_T1_isoforms[,c("transcript_id", "expected_count")], by = "transcript_id", suffix = c(".N3", ".T1")) %>%
+  left_join(RSEM_T2_isoforms[,c("transcript_id", "expected_count")], by = "transcript_id") %>%
+  left_join(RSEM_T3_isoforms[,c("transcript_id", "expected_count")], by = "transcript_id", suffix = c("T2", ".T3"))
+
+head(RSEM_isoform_counts)
+```
+
+
+```{r}
+#Get the sum of the counts in RSEM
+colSums(RSEM_gene_counts[, -1])
+```
+
+
+```{r}
+#Number of the aligned reads of countResults1
+countResults1$stat[1,-1]
+```
+
+
+```{r}
+#Number of the aligned reads of countResults2
+countResults2$stat[1,-1]
+```
+
+The sum of the counts in RSEM is closer to the number of the aligned reads of countResults1 which had no multipmapping than countResults2 with the multipmapping.
+
+
+## 4. Compute pair-wise correlation of the samples based on the isoform counts and gene level counts
+
+```{r}
+#Get pairwise correlation between gene counts
+gen_cor <- cor(RSEM_gene_counts[, -1])
+gen_cor
+corrplot::corrplot(gen_cor, method = "color", type = 'lower', diag = TRUE, tl.pos='n',addCoef.col = 'black')
+
+```
+
+```{r}
+#Get pairwise correlation between isoform counts
+isoform_cor <- cor(RSEM_isoform_counts[, -1])
+isoform_cor
+corrplot::corrplot(isoform_cor, method = "color", type = 'lower', diag = TRUE, tl.pos='n',addCoef.col = 'black')
+```
+

@@ -1,0 +1,199 @@
+---
+title: "Exercise 07"
+author: "Sarah Lötscher"
+date: "31 10 2022"
+format:
+  html:
+    self-contained: true
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Exercise 7: playing with design/contrast matrices, UpSet plots and differential expression with count data
+
+
+```{r ,  warning=FALSE,message=FALSE}
+#Packages
+library(limma)
+library(edgeR)
+library(affy)
+library(UpSetR)
+```
+
+
+## Question 1.
+Using the estrogen dataset from Exercise 5, create an UpSet plot summarizing the numbers of differentially expressed genes for the 3 contrasts: ‘E10’, ‘E48’ and ‘Time’ (contrasts as defined in Exercise 5 using makeContrasts()). Hint: you can use decideTests() to summarize the results, given some thresholds. UpSet plots are the new Venn diagrams and can be created with the UpSetR package.
+
+```{r}
+#Read in data
+
+path<-"../Exercise4/affy_estrogen/"
+
+targets <- readTargets("targets.txt", path=path)
+targets$time.h <- factor(targets$time.h)
+targets$estrogen <- factor(targets$estrogen)
+
+abatch <- ReadAffy(filenames=targets$filename,
+                   celfile.path=path)
+```
+
+```{r}
+#Data Normalisation and Calculating Expression
+eset <- rma(abatch)
+
+```
+
+
+```{r}
+#Limma modeling and get Design matrix
+
+f <- paste(targets$estrogen,targets$time.h,sep="")
+f <- factor(f)
+
+dm <- model.matrix(~0+f)
+colnames(dm) <- levels(f)
+dm
+
+```
+
+```{r}
+#Get the contrast matrix
+fit <- lmFit(eset,dm)
+
+cm <- makeContrasts(E10="present10-absent10",E48="present48-absent48",Time="absent48-absent10",levels=dm)
+cm
+```
+
+```{r}
+fitC <- contrasts.fit(fit, cm)
+fitC  <- eBayes(fitC)
+
+topTable(fitC, coef=3, n=5)
+```
+
+
+```{r}
+#summarize the results
+dt <- (decideTests(fitC) != 0)+0
+
+#Create Venn diagrams
+upset(as.data.frame(dt))
+```
+
+
+## Question 2.
+
+Using the estrogen dataset from Exercise 5, reproduce the (limma) differential expression analysis using a different design matrix (remember, it’s all about the combination of a design matrix and a contrast matrix). Hint: use the experimental factors defined in the ‘targets’ data frame.
+
+```{r}
+# Get design matrix
+(dm2 <- model.matrix( ~ estrogen*time.h, data=targets ))
+```
+
+```{r}
+
+fit2 <- lmFit(eset, dm2)
+fit2  <- eBayes(fit2)
+
+```
+
+```{r}
+
+topTable(fit2, coef=3, n=5)
+
+```
+
+## Question 3.
+
+Fix the code above to work on the count table that was already read in. Add in some spot checks, including an MDS plot from plotMDS() (or similar), a look at the dispersion-mean plot using plotBCV() (or similar) and a look at the overall M vs A plot using plotSmear() (or similar).
+
+```{r}
+(samples <- read.table("samples.txt", header=TRUE,
+                      row.names=5, stringsAsFactors=FALSE))
+
+counts <- readDGE(samples$countfile)$counts
+(grp <- gsub("\\-.[0-9]*","",colnames(counts)))
+
+y <- DGEList(counts=counts,group=grp)
+y <- calcNormFactors(y)
+design <- model.matrix(~grp)
+
+y <- estimateDisp(y,design)
+
+#To perform likelihood ratio tests:
+fit <- glmFit(y,design)
+lrt <- glmLRT(fit,coef=2)
+topTags(lrt)
+
+```
+
+```{r}
+#MDS plot
+plotMDS(y)
+```
+
+```{r}
+#dispersion-mean plot
+plotBCV(y)
+
+```
+
+```{r}
+#overall M vs A plot
+plotSmear(y)
+
+```
+
+## Question 4.
+
+For the MDS plot, investigate what happens differently when you call plotMDS() on the DGEList object and when you call it on the normalized counts – for normalized counts, see the cpm() function. Explain why it is different.
+
+```{r}
+#MDS Plot on DGEList object
+plotMDS(y)
+```
+
+```{r}
+#MDS Plot on normalized counts
+plotMDS(cpm(y))
+```
+
+
+Calling plotMDS() on a DGEList will call cpm() only after adding prior.count=2 and then create an MDS plot on the log-CPMs generated from the count matrix. We cam make the plot look the same as the MDS Plot on DGEList object by  calling cpm() with log=TRUE and prior.count=2. Since prior.count=2 is the default for this version we can simply do this:
+
+```{r}
+#MDS Plot that looks the same as MDS Plot on DGEList object
+plotMDS(cpm(y, log=TRUE))
+```
+
+## Question 5.
+
+Again, the above code for voom is not run here. Fix this code to work with the count dataset above and then do some spot checks of the genes called DE. For example, make a plot of the plot of estimated fold changes for the two methods (limma and edgeR), compare the P-values of the two methods, or create a venn diagram of the called sets of DE genes at a set threshold.
+
+```{r}
+#voom
+v <- voom(y, design=model.matrix(~grp), plot = TRUE)
+
+```
+```{r}
+#plot of the plot of estimated fold changes for the two methods
+
+lmv= lmFit(v, design = model.matrix(~grp))  
+lmv = eBayes(lmv)
+
+plot(lmv$coefficients[,2], fit$coefficients[,2]); 
+
+```
+
+```{r}
+#Compare the P-values of the two methods
+plot(lmv$p.value[,2], lrt$table$PValue,log="xy"); 
+```
+
+
+

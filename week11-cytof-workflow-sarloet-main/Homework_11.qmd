@@ -1,0 +1,294 @@
+---
+title: "Exercise 11"
+author: "Sarah Lötscher"
+date: "02 12 2022"
+format:
+  html:
+    self-contained: true
+---
+
+## STA426 Exercise 11
+
+```{r,warning = FALSE,message = FALSE}
+set.seed(42)
+```
+
+```{r,warning = FALSE,message = FALSE}
+#Packages
+library("ExperimentHub")
+library("CATALYST")
+library("diffcyt")
+
+```
+
+## Q1. Loading the data
+
+```{r}
+eh <- ExperimentHub()
+query(eh, "Bodenmiller")
+
+
+
+```
+
+```{r}
+#Get "Bodenmiller_BCR_XL_flowSet"
+dd<-eh[["EH2255"]]
+
+dd
+```
+
+```{r}
+#How many markers are recorded? How many samples are there? How many cells per sample?
+for (x in 1:16) {
+  print(dim(exprs(dd[[x]])))
+}  
+
+```
+
+## Q2. Constructing a SingleCellExperiment
+
+```{r}
+# download panel & metadata 
+url <- "http://imlspenticton.uzh.ch/robinson_lab/cytofWorkflow"
+fns <- list(panel = "PBMC8_panel_v3.xlsx", md = "PBMC8_metadata.xlsx")
+for (fn in fns) download.file(file.path(url, fn), destfile = fn, mode = "wb") 
+
+# load into R
+library(readxl)
+panel <- read_excel(fns$panel)
+md <- read_excel(fns$md)
+
+```
+
+```{r}
+#Construct a SCE
+
+SCE <- prepData(dd, panel, md)
+
+```
+
+How many markers and how many cells are there?
+
+```{r}
+head(panel)
+head(md)
+dim(SCE)
+
+```
+
+The panel table has three columns:
+
+-   fcs_colnames is name of marker
+
+-   antigen is protein identified by marker
+
+-   marker_class is a factor (with two levels) telling whether marker identified is indicative of cell type or cell state
+
+The metadata table has four columns:
+
+-   file_name is the filename of experiment
+
+```{=html}
+<!-- -->
+```
+-   sample_id is unique id number for each experiment
+
+```{=html}
+<!-- -->
+```
+-   condition is a factor (with two levels) telling whether sample is treated or not
+
+-   patient_id is a factor (with eight levels) telling which patient sample was taken from
+
+\--\> The SingleCellExperiment object has 24 markers and 172791 cells.
+
+
+# Q3. Type and state markers
+
+```{r}
+#Print the set of type markers pre-defined in the SCE
+type_markers(SCE)
+
+```
+
+
+```{r}
+#Plot a heatmap of median marker expression across samples
+plotExprHeatmap(SCE, features = "type", by = "sample_id")
+
+```
+
+Are there type markers that may violate the above assumption?
+
+There are some markers that may speak against consistent marker expressions across experimental groups. For example see the markers: CD20,CD4 and CD7.
+
+# Q4. Clustering
+
+```{r}
+# Cluster the data into 8x8 high-resolution-, and 2-10 metaclusters.
+
+SCE_C <- cluster(SCE, features = "type",xdim = 8, ydim = 8, maxK = 10,seed = 1)
+
+colData(SCE_C)
+
+```
+
+
+```{r}
+#Calculate (and print a table of) the percentage of cells assigned to each cluster at the 8-metacluster level of clustering (meta8), for each sample (or condition).
+
+
+table(cluster_ids(SCE_C, "meta8"))/sum(table(cluster_ids(SCE_C, "meta8")))*100
+
+```
+
+
+```{r}
+table(cluster_ids(SCE_C, "meta8")[colData(SCE_C)$condition == "BCRXL"])/sum(table(cluster_ids(SCE_C, "meta8")[colData(SCE_C)$condition == "BCRXL"]))*100
+
+```
+
+```{r}
+table(cluster_ids(SCE_C, "meta8")[colData(SCE_C)$condition == "Ref"])/sum(table(cluster_ids(SCE_C, "meta8")[colData(SCE_C)$condition == "Ref"]))*100
+
+```
+
+
+Using the percentages, given an example of clusters that are equally, more or less frequent in one condition than the other:
+
+-As an example of clusters that is equally in one condition than the other is for example cluster nr 8 which the percenatge is around 2.3%.
+
+-As an example of clusters that is more frequent for condition treatment than the reference, is for example cluster nr 1 whith a percentage of ~37% vs ~32%.
+
+-As an example of clusters that is less frequent for condition treatment than the reference, is for example cluster nr 4 with a percentage of ~25% vs ~38%.
+
+
+
+
+
+
+# Q5. Dimension reduction
+
+```{r}
+#Using runDR(), compute a UMAP embedding of at most 500 cells per sample.
+
+SCE_R <- runDR(SCE_C, dr = "UMAP", cells = 500, features = "type")
+
+```
+
+
+```{r}
+#Using plotDR(), plot UMAP embeddings colored by patient_id and condition.
+
+plotDR(SCE_R, color_by = "patient_id")
+
+plotDR(SCE_R, color_by = "condition")
+
+```
+
+Is there any apparent patient effect?
+
+From the plot colored by patient_id we can see that the distribution of the patients is quite homogeneous this suggests against any apparent patient/batch effect.
+
+
+How does BCRXL stimulation manifest itself?
+
+From the plot colored by condition we can see that the BCRXL stimulation shifts the points in certain regions, making them group together more. This suggests that there is difference between the conditions.
+
+
+# Q6. Exploratory data analysis
+
+```{r}
+#Generate MDS plots with samples colored by patient_id and condition.
+
+pbMDS(SCE_R, color_by = "patient_id")
+pbMDS(SCE_R, color_by = "condition")
+
+```
+Comment on how samples group together or are separated from one another:
+
+From the plots we can see that the dissimilarity between the condtions is bigger than the dissimilarity between patients. In the plot colored by patient_id we can see that there are patient individual differences/variiation between the samples. In the plot colored by conditions we can see  that there is a nice and clear split between the two conditions along the MDS dimmension 1.
+
+
+# Q7. Differential state (DS) analysis
+
+```{r}
+
+# extract experimental design table
+ei <- metadata(SCE_R)$experiment_info
+
+# create model formulas with & without patient effect
+ds_formula1 <- createFormula(ei, cols_fixed = "condition", cols_random = "patient_id")
+ds_formula2 <- createFormula(ei, cols_fixed = "condition")
+
+# create contrast matrix
+#contrast1 <- createContrast(c(0, 1, rep(0, 7)))
+contrast <- createContrast(c(0, 1))
+
+
+
+# run 'diffcyt' 2x
+res_ds1 <- diffcyt(SCE_R, ei, 
+    formula = ds_formula1, 
+    contrast = contrast,
+    analysis_type = "DS", 
+    method_DS = "diffcyt-DS-LMM",
+    clustering_to_use = "meta8")
+
+res_ds2 <- diffcyt(SCE_R, ei, 
+    formula = ds_formula2, 
+    contrast = contrast,
+    analysis_type = "DS", 
+    method_DS = "diffcyt-DS-LMM",
+    clustering_to_use = "meta8")
+
+```
+
+```{r}
+#Print a table of the number of DS findings for each model at an FDR cutoff of 5%.
+
+#res_ds1
+cutoff <- 0.05
+res_ds1_all <- topTable(res_ds1, all = TRUE)
+table(res_ds1_all$p_adj <= cutoff)
+```
+
+```{r}
+#res_ds2
+cutoff <- 0.05
+res_ds2_all <- topTable(res_ds2, all = TRUE)
+table(res_ds2_all$p_adj <= cutoff)
+
+```
+
+
+How many tests are there in total and why?
+
+In total there were 112 tests. This is given by the number of clusters (which is 8) times the number of Markers (which is 14) because each marker is tested for each cluster.
+ 
+ 
+Comment on what effect accounting for patient variability has on sensitivity.
+
+Because there is a increased number in detentions when we take the patient_id into account in our model, this would suggests an increase in sensitivity.
+
+
+# Q8. Visualizing DS results 
+
+```{r}
+#Visualize the top 50 hits using plotDiffHeatmap
+
+plotDiffHeatmap(SCE_R, rowData(res_ds1$res), all = TRUE, fdr = cutoff, top_n = 50,sort_by = "padj")
+
+plotDiffHeatmap(SCE_R, rowData(res_ds2$res), all = TRUE, fdr = cutoff, top_n = 50,sort_by = "padj")
+
+```
+
+```{r}
+#Plot UMAPs colored by their expression and split by condition.
+
+plotDR(SCE_R, color_by = rownames(SCE_R), facet_by = "condition")
+
+```
+
+ 
